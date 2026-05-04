@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sección Hero con efecto iridiscente</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Jost:wght@400;500;700&display=swap');
+
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: #111; 
+            font-family: 'Jost', sans-serif;
+        }
+        canvas { 
+            display: block; 
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+        .ui-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none; /* Permite que el mouse interactúe con el fondo 3D a través de los espacios vacíos */
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            box-sizing: border-box;
+            padding: 3rem 5%;
+        background: linear-gradient(to top, rgba(0,0,0,0.95) 0%, transparent 65%, transparent 75%, rgba(0,0,0,0.85) 100%);
+        }
+        nav {
+            display: flex;
+            justify-content: flex-end; /* Alinea el menú a la derecha */
+            gap: 3rem;
+            pointer-events: auto;
+        }
+        nav a {
+            color: #ffffff;
+            text-decoration: none;
+            font-size: 1.1rem;
+            font-weight: 500;
+            transition: opacity 0.3s;
+        }
+        nav a:hover {
+            opacity: 0.7;
+        }
+        .hero-text {
+            color: #ffffff;
+            pointer-events: auto;
+        }
+        .hero-text h1 {
+            margin: 0;
+            font-size: 7rem;
+            line-height: 1.1;
+            font-weight: 700;
+        max-width: 1200px;
+        }
+        .hero-text p.subtitle {
+            margin: 0.5rem 0 0 0;
+            font-size: 2.5rem;
+            font-weight: 400;
+            opacity: 0.8;
+        }
+        .hero-text p.description {
+            margin: 1.5rem 0 0 0;
+            font-size: 1.1rem;
+            font-weight: 400;
+            opacity: 0; /* Comienza invisible para la animación GSAP */
+            max-width: 700px;
+            line-height: 1.6;
+            transform: translateY(20px);
+        }
+    </style>
+</head>
+<body>
+
+<div class="ui-container">
+    <nav>
+        <a href="#">Inicio</a>
+        <a href="#">Acerca de</a>
+        <a href="#">Portafolio</a>
+        <a href="#">Contacto</a>
+    </nav>
+    <div class="hero-text">
+        <h1>Taller de diseño<br>digital 4</h1>
+        <p class="subtitle"><Col></Col>Carrera de Diseño Digital UCB</p>
+        <p class="description">Este entorno interactivo utiliza Three.js para renderizar un modelo 3D (Objeto GLB) con un material metálico altamente pulido. El efecto iridiscente fluido no es una textura pintada sobre el objeto, sino un cálculo en tiempo real de los reflejos generados por una imagen panorámica (HDRI) oculta, la cual rota de forma continua y reacciona a los movimientos de tu cursor para simular una iluminación física dinámica.</p>
+    </div>
+</div>
+
+<script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.164.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.164.0/examples/jsm/"
+        }
+    }
+</script>
+
+<script type="module">
+    import * as THREE from 'three';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+    // --- Configuración Básica ---
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 0, 12); // Alejamos la cámara para evitar que quede dentro del objeto
+    camera.lookAt(0, 0, 0); // Forzamos a mirar al centro exacto
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.2;
+    document.body.appendChild(renderer.domElement);
+
+    // --- Luces de Respaldo ---
+    // Iluminación base para que el modelo no se vea negro si el HDRI falla o tarda
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.5); // Más intensidad base
+    scene.add(ambientLight);
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 2.5);
+    directionalLight.position.set(0, 5, 10); // Luz completamente frontal para evitar oscuridad total
+    scene.add(directionalLight);
+
+    // --- Carga de HDRI ---
+    let envMap;
+    const textureLoader = new THREE.TextureLoader();
+    // Archivo de entorno local en formato JPG
+    textureLoader.load('./gradient-3d-fluid-background.jpg', (texture) => {
+        texture.mapping = THREE.EquirectangularReflectionMapping;
+        texture.colorSpace = THREE.SRGBColorSpace; // Corregir el color para JPG
+        envMap = texture;
+        
+        // El HDRI no será visible en el fondo, pero sí en los reflejos
+        scene.environment = envMap;
+    });
+
+    // Se llama de forma independiente para que el objeto cargue sí o sí
+    loadModel();
+
+    // --- Material Metal Pulido ---
+    const matteMetalMaterial = new THREE.MeshStandardMaterial({
+        color: 0xffffff,  // Base blanca brillante para no absorber el reflejo
+        metalness: 1.0,   // Metal puro
+        roughness: 0.05,  // Superficie casi perfecta tipo espejo (aún menos mate)
+        envMapIntensity: 2.0 // Reflejos más intensos
+    });
+
+    // --- Carga del GLB ---
+    function loadModel() {
+        const loader = new GLTFLoader();
+        // Reemplaza con la ruta de tu modelo .glb
+        loader.load('./recuadros.glb', (gltf) => {
+
+            const model = gltf.scene;
+            
+            model.traverse((child) => {
+                if (child.isMesh) {
+                    child.material = matteMetalMaterial;
+                }
+            });
+            
+            // --- Limpiar y Centrar ---
+            model.position.set(0, 0, 0);
+            model.rotation.set(0, 0, 0);
+            model.scale.set(1, 1, 1);
+
+            const box = new THREE.Box3().setFromObject(model);
+            const size = box.getSize(new THREE.Vector3());
+            const maxDim = Math.max(size.x, size.y, size.z);
+            
+            if (maxDim > 0) {
+                // Escala aumentada significativamente para que el modelo desborde y cubra todo el fondo
+                const scale = 30 / maxDim; 
+                model.scale.setScalar(scale);
+            }
+            
+            const finalBox = new THREE.Box3().setFromObject(model);
+            const center = finalBox.getCenter(new THREE.Vector3());
+            model.position.sub(center);
+
+            scene.add(model);
+        });
+    }
+
+    // --- Interacción con el Mouse para el HDRI ---
+    let targetRotationX = 0;
+    let targetRotationY = 0;
+    const mouse = new THREE.Vector2();
+
+    window.addEventListener('mousemove', (event) => {
+        // Normalizar coordenadas del mouse (-1 a 1)
+        mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+        targetRotationY = mouse.x * Math.PI; // Rotación horizontal
+        targetRotationX = mouse.y * Math.PI; // Rotación vertical
+    });
+
+    let autoRotation = 0;
+
+    // --- Animación ---
+    function animate() {
+        requestAnimationFrame(animate);
+
+        autoRotation += 0.002; // Incremento constante y muy sutil de la rotación
+
+        // En versiones modernas de Three.js (r164+), esta es la forma correcta de rotar el entorno sin romperlo
+        scene.environmentRotation.y = (targetRotationY * 1.8) + autoRotation;
+        scene.environmentRotation.x = targetRotationX * 1.8;
+
+        renderer.render(scene, camera);
+    }
+
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    animate();
+
+    // --- Animación de Texto GSAP ---
+    function animateText() {
+        const h1 = document.querySelector('.hero-text h1');
+        const p = document.querySelector('.hero-text p.subtitle');
+
+        // Función para envolver cada letra de forma segura respetando HTML interno (como los <br>)
+        function wrapCharacters(el) {
+            let result = '';
+            const childNodes = Array.from(el.childNodes);
+            childNodes.forEach(node => {
+                if (node.nodeType === 3) { // Nodo de texto
+                    const text = node.textContent;
+                    for (let i = 0; i < text.length; i++) {
+                        const char = text[i];
+                        if (char === ' ') {
+                            result += `<span class="char" style="display:inline-block; opacity:0; transform:translateY(20px);">&nbsp;</span>`;
+                        } else {
+                            result += `<span class="char" style="display:inline-block; opacity:0; transform:translateY(20px);">${char}</span>`;
+                        }
+                    }
+                } else if (node.nodeType === 1) { // Nodo de elemento HTML (como <br>)
+                    result += node.outerHTML;
+                }
+            });
+            el.innerHTML = result;
+        }
+
+        wrapCharacters(h1);
+        wrapCharacters(p);
+
+        // Animación en cascada para cada letra
+        gsap.to('.char', {
+            opacity: 1,
+            y: 0,
+            duration: 0.8,
+            stagger: 0.03, // Tiempo de espera entre letra y letra
+            ease: "power3.out",
+            delay: 0.5 // Pequeña pausa inicial al cargar la página
+        });
+
+        // Animación de entrada suave para el párrafo explicativo
+        gsap.to('.hero-text p.description', {
+            opacity: 0.8,
+            y: 0,
+            duration: 1.2,
+            ease: "power3.out",
+            delay: 1.8 // Inicia poco después de que las letras empiecen a aparecer
+        });
+    }
+    
+    animateText();
+</script>
+</body>
+</html>
